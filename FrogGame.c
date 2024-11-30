@@ -9,6 +9,11 @@
 #define SETTINGS_NUM 5
 #define SYMBOL_NUM 3
 
+// For testing
+
+#define WIDTH 10
+#define HEIGHT 10
+
 
 // Colours
 #define BG_COLOR 1 //black
@@ -28,10 +33,11 @@ typedef struct {
 
 typedef struct {
     WIN* win;
+    int x,y;
     char symbol;
     int color;
+    int move;
 } OBJ;
-
 
 typedef struct {
     int frameNum;
@@ -47,12 +53,6 @@ WINDOW* startGame(){
         fprintf(stderr, "Ncurses could not be initialized.");
         exit(EXIT_FAILURE);
     }
-   /* int h, w;
-    getmaxyx(win, h, w);
-    if (h < 20 || w < 40) {
-       smallTerminalWin(win);
-    }*/
-
     //initialize colours
     if (has_colors()){ 
         start_color();
@@ -71,23 +71,12 @@ WINDOW* startGame(){
 }
 
 void starterScreen(WINDOW* win){
-
-    wrefresh(win);
+    mvwaddstr(win, 1, 1, "Frogger Game by ");
+	mvwaddstr(win, 2, 1, "Press any key to start");
+	wgetch(win);								
+	wclear(win);								
+	wrefresh(win);
 }
-
-
-// Window functions
-
-/*void smallTerminalWin(WIN* win){
-   // clearWindow(win, 1);
-    for (int i=CLOSE_TIME; i <= 0; i--){
-        mvwprintw(win->window, 1, 1,"Terminal too small. Please resize to at least 40x20.");
-        mvwprintw(win->window,2, 1, "The window will close in %d seconds...", i);
-        wrefresh(win->window);
-        
-    }
-    
-}*/
 
 void endGame(WIN* win){
 
@@ -97,6 +86,7 @@ WIN* initWindow(WINDOW* pWin, int width, int height, int x, int y){
     WIN* win = (WIN*) malloc(sizeof(WIN));
     win->width = width; win->height = height; win->x = x; win->y = y;
     win->window = subwin(pWin, width, height, y, x);
+    clearWindow(win);
     wrefresh(win->window);
     return win;
 }
@@ -108,6 +98,24 @@ void clearWindow(WIN* win){
 			mvwprintw(win->window,i,j," ");
 
 }
+
+
+
+// Frog & Car functions
+
+OBJ* initFrog(WIN* win, int color, char symbol){
+    OBJ* frog	   = (OBJ*)malloc(sizeof(OBJ));
+    frog->symbol = symbol; frog->color = color; frog->win = win;
+    initPos(frog, (frog->win->width - 1), frog->win->height);
+    return frog;
+}
+
+void initPos(OBJ* obj, int xs, int ys)
+{
+	obj->x = xs;
+	obj->y = ys;
+}
+
 
 // Timer functions
 
@@ -127,6 +135,12 @@ FILE* readFromFiles(char* fileName){
     return file;
 }
 
+// Main Loop
+
+int mainLoop(){
+    
+}
+
 
 int main(){
 
@@ -142,10 +156,11 @@ int main(){
     fscanf(symbols, "%c %c %c", &gameSymbols[0], &gameSymbols[1], &gameSymbols[2]);
 
     WIN* gameWin = initWindow(stdWin, gameSettings[0], gameSettings[1], 0, 0);
+    OBJ* frog = initFrog(gameWin, FROG_COLOR, gameSymbols[0]);
 
-   /* delwin(gameWin->window);							
+    delwin(gameWin->window);							
 	delwin(stdWin);
-    endwin();*/
+    endwin();
     refresh();
     return EXIT_SUCCESS;
 }
