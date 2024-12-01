@@ -56,12 +56,6 @@ typedef struct {
     int mv;
 } OBJ;
 
-typedef struct {
-    int frameNum;
-    unsigned int frameTime;
-    float passTime;
-} TIMER;
-
 // ----------- Window etc functions --------------
 
 WINDOW* startGame(){
@@ -157,15 +151,16 @@ OBJ* initCar(WIN* win, int x, int y, int width, int color, char symbol, int dir,
     car->dir = dir;
     car->speed = speed;
     car->xmin = 0;
-    car->xmax = win->width - 1;
+    car->xmax = win->width;
     car->mv = mv;
     return car;
 }
 
 void initCars(OBJ** cars,int carNum, WIN* gWin, char s, int minW, int maxW){
     for (int i=0; i<carNum; i++){
-        int y = (i + 1) * 3;
-        if (y==gWin->height-2) y--;
+        int y = ((rand() % 2 ? 1 : 2)+i)%gWin->height; 
+        if (y>=gWin->height-2) y--;
+        if (y<1) y=1;
         int x = rand() % gWin->width;
         int width = minW + rand() % maxW;
         int speed = 1 + rand() % 2;
@@ -239,7 +234,7 @@ void arrayFromFiles(int* gameSettings, char* gameSymbols){
 
 // ---------------- MAIN LOOP/TIMELINE ------------------
 
-void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* gamesettings){
+void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* gamesettings, int carnum){
     int ch, pts = 0, fC = 0;
     float timer = gamesettings[2];
 
@@ -265,15 +260,21 @@ void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* ga
         break;
         }
     }	
-    for (int i = 0; i < gamesettings[1] - 2; i++){
+    for (int i = 0; i < carnum; i++){
         moveCar(cars[i], fC);
         if (collision(frog, cars[i]) == 1){ // 1 = frog and car collided
             gameOver(gWin, sWin, pWin);
         }
+        box(gWin->window, 0, 0);
     }
     if (frog->y == 1) { // Frog reaches the "top"
             pts++;
             moveFrog(frog, 0, gWin->height-3, fC);
+            char s = cars[0]->symbol;
+            for (int i = 0; i < carnum; i++){
+                clearObj(cars[i]);
+            }
+            initCars(cars, carnum, gWin, s, gamesettings[3], gamesettings[4]);
     }
 
     updateStatus(sWin, pts, timer);
@@ -304,11 +305,13 @@ int main(){
 
     OBJ* frog = initFrog(gameWin, FROG_COLOR, gameSymbols[0]);
     drawObj(frog);
-    int carNum = 5 + (gameSettings[1]-2);
+    
+    int carNum = gameSettings[1]/2;
+    carNum += 5;
     OBJ* cars[carNum];
     initCars(cars, carNum, gameWin,  gameSymbols[1], gameSettings[3], gameSettings[4]);
    
-    mainLoop(gameWin, statusWin, stdWin, frog, cars, gameSettings);
+    mainLoop(gameWin, statusWin, stdWin, frog, cars, gameSettings, carNum);
     
     // --------- Cleanup ----------
     cleanup(gameWin, statusWin, stdWin);
