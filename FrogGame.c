@@ -5,40 +5,26 @@
 #include <unistd.h>
 #include <time.h>
 
-#define CLOSE_TIME 4
-#define BORDER 1
-#define SETTINGS_NUM 6
+#define SETTINGS_NUM 7
 #define SYMBOL_NUM 3
 #define STATUS_WIDTH 25
 
 #define DELAY_OFF 0
 #define DELAY_ON 1
 
-
-#define QUIT 'k'
 #define NOKEY ' '
-#define QUIT_T 4
-
-// For testing
-
-#define WIDTH 10
-#define HEIGHT 10
 
 // Colours
 #define BG_COLOR 1 //black
 #define FROG_COLOR 2 //green
 #define CAR_COLOR 3 //red
-#define CAR_COLOR_ALT 4 //blue
-#define CAR_COLOR_ALT_2 5 //magenta
+#define CAR_COLOR_FRIEND 4 //blue
 
 //Timer
-
-#define BET_TIME	2							
-#define FRAME_TIME	100							
-#define MVF	1							
-#define MVC 2							
-
-//#define FRAME_TIME 100000
+#define BET_TIME	2
+#define FRAME_TIME	100	
+#define MVF	1
+#define MVC 2
 
 // ----------- Structures ------------
 typedef struct {
@@ -58,6 +44,7 @@ typedef struct {
     int ymin, ymax;
     int mv;
     bool isFriendly;
+    bool isInCar;
 } OBJ;
 
 // ----------- Window etc functions --------------
@@ -75,8 +62,7 @@ WINDOW* startGame(){
         init_pair(BG_COLOR, COLOR_WHITE, COLOR_BLACK);
         init_pair(FROG_COLOR, COLOR_GREEN, COLOR_BLACK);
         init_pair(CAR_COLOR, COLOR_RED, COLOR_BLACK);
-        init_pair(CAR_COLOR_ALT, COLOR_BLUE, COLOR_BLACK);
-        init_pair(CAR_COLOR_ALT_2, COLOR_MAGENTA, COLOR_BLACK);
+        init_pair(CAR_COLOR_FRIEND, COLOR_BLUE, COLOR_BLACK);
     }
 
     curs_set(0);
@@ -145,7 +131,7 @@ FILE* readFromFiles(char* fileName){
 void arrayFromFiles(int* gameSettings, char* gameSymbols){
     FILE *settings = readFromFiles("gameSettings.txt");
     FILE *symbols = readFromFiles("gameSymbols.txt");
-    fscanf(settings, "%d %d %d %d %d %d", &gameSettings[0], &gameSettings[1], &gameSettings[2],&gameSettings[3], &gameSettings[4], &gameSettings[5]);
+    fscanf(settings, "%d %d %d %d %d %d %d", &gameSettings[0], &gameSettings[1], &gameSettings[2],&gameSettings[3], &gameSettings[4], &gameSettings[5], &gameSettings[6]);
     fscanf(symbols, "%c %c %c", &gameSymbols[0], &gameSymbols[1], &gameSymbols[2]);
     fclose(settings); fclose(symbols);
 }
@@ -156,6 +142,12 @@ int yCheck(OBJ* obj){
     if (obj->y<=1) obj->y=2;
     else if (obj->y >= obj->ymax) obj->y = obj->ymax-1;
     return obj->y;
+}
+
+bool isFriendly(int friendliness){
+    int isF = rand()%friendliness;
+    if (isF == 0) return true;
+    else return false;
 }
 
 
@@ -182,29 +174,32 @@ OBJ* initFrog(WIN* win, int color, char symbol){
     frog->color = color;
     frog->win = win;
     frog->xmax = win->width-1;
-    frog->xmin = 0; 
+    frog->xmin = 1; 
     frog->x = win->width / 2;
     frog->y = win->height - 2; 
     frog->mv = MVF;
     frog->width = 1;
+    frog->isInCar = false;
     return frog;
 }
 
-OBJ* initCar(WIN* win, int x, int y, int width, char symbol, int dir, int speed) {
+OBJ* initCar(WIN* win, int x, int y, int width, char symbol, int dir, int speed, int friendliness) {
     OBJ* car = (OBJ*)malloc(sizeof(OBJ));
     car->win = win;
     car->x = x; car->y = y;
     car->width = width;
-    car->color = 3+ rand()%3;
     car->symbol = symbol;
     car->dir = dir;
     car->speed = speed;
     car->xmin = 0;
-    car->xmax = win->width;
+    car->xmax = win->width-2;
     car->ymin = 1;
     car->ymax = win->height-2;
     car->mv = MVC;
-    car->isFriendly = rand()%2;
+    car->isFriendly = isFriendly(friendliness);
+    if (car->isFriendly) car->color = CAR_COLOR_FRIEND;
+    else car->color = CAR_COLOR;
+    car->isInCar = false; // is FROG in car
     return car;
 }
 
@@ -219,12 +214,13 @@ OBJ* carRand(OBJ* car, int* gamesettings){
     car->color = 3+ rand()%3;
     car->width = gamesettings[3] + rand() % gamesettings[4];
     car->speed = 1 + rand() % 2;
-    car->isFriendly = rand()%2;
+    car->isFriendly = isFriendly(gamesettings[6]);
+    if (car->isFriendly) car->color = CAR_COLOR_FRIEND;
+    else car->color = CAR_COLOR;
     return car;
 }
 
-
-void initCars(OBJ** cars,int carNum, WIN* gWin, char s, int minW, int maxW){
+void initCars(OBJ** cars,int carNum, WIN* gWin, char s, int minW, int maxW, int f){
     for (int i=0; i<carNum; i++){
         int y = ((rand() % 2 ? 1 : 2)+i)%gWin->height; 
         if (y >= gWin->height-2) y = gWin->height-3;
@@ -232,7 +228,7 @@ void initCars(OBJ** cars,int carNum, WIN* gWin, char s, int minW, int maxW){
         int x = rand() % gWin->width;
         int width = minW + rand() % maxW;
         int speed = 1 + rand() % 3;
-        cars[i] = initCar(gWin, x, y, width, s , rand() % 2 ? 1 : -1, speed);
+        cars[i] = initCar(gWin, x, y, width, s , rand() % 2 ? 1 : -1, speed, f);
         drawObj(cars[i]);
     }
 }
@@ -295,23 +291,70 @@ void moveCar(OBJ* car, unsigned int frame) {
     } 
 }
 
-void changeLane(OBJ* car){
-    clearObj(car);
+void changeLane(OBJ* obj){
+    clearObj(obj);
     int a = (rand() % 2 ? 1 : -1) ;
-    car->y += a;
-    car->y = yCheck(car);
-    drawObj(car);
+    obj->y += a;
+    obj->y = yCheck(obj);
+    drawObj(obj);
 }
 
-// Collision check
+// Collision checks
 int collision(OBJ* obj1, OBJ* obj2) {
     if (obj1->y != obj2->y) return 0;
-    return (obj1->x >= obj2->x && obj1->x < obj2->x + obj2->width);
+    return ((obj1->x >= obj2->x && obj1->x < obj2->x + obj2->width) || (obj1->x <= obj2->x && obj1->x > obj2->x + obj2->width) );
 }
+
+int stopCollision(OBJ* obj1, OBJ* obj2){
+    if (obj1->y != obj2->y) return 0;
+    if (obj2->dir){
+        int x = obj1->x+2;
+        return ((x >= obj2->x && x < obj2->x + obj2->width) || (x <= obj2->x && x > obj2->x + obj2->width) );
+    }
+    else {
+        int x = obj1->x-2;
+        return ((x >= obj2->x && x < obj2->x + obj2->width) || (x <= obj2->x && x > obj2->x + obj2->width) );
+    }
+    
+}
+
+void carCollision(OBJ* frog, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin, int f){
+    for (int i = 0; i < carnum; i++){
+        bool shouldStop = rand()%2;
+        if (shouldStop && stopCollision(frog, cars[i]) == 1 && !cars[i]->isFriendly){
+            cars[i]->speed = 0;
+        }
+        else if (!shouldStop && collision(frog, cars[i]) == 1 && !cars[i]->isFriendly && !frog->isInCar){ // 1 = frog and car collided
+            gameOver(frog->win, sWin, pWin);
+        }
+        else if (collision(frog, cars[i]) == 1 && cars[i]->isFriendly && !frog->isInCar){
+            frog->isInCar = true;
+            cars[i]->isInCar = true;
+            if(frog->y == cars[i]->y && frog->x < frog->xmax-1 && frog->x > frog->xmin+1){
+                frog->x += cars[i]->dir;
+                drawObj(frog);
+            }
+            else {
+                frog->isInCar = false;
+                cars[i]->isInCar = false;
+                //drawObj(frog);
+            }
+        }
+        else if (collision(frog, cars[i]) == 0) {frog->isInCar = false; cars[i]->isInCar = false; drawObj(frog);} 
+        for (int j = 0; j < carnum; j++){
+            if (j!=i && (collision(cars[j], cars[i]) == 1)){
+                changeLane(cars[i]);
+                if (cars[i]->isInCar){
+                    changeLane(frog);
+                }
+            }
+        }
+}
+    }
 
 void obstacleCollision(OBJ* frog, OBJ** obs, int obsnum, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin){
      for (int i = 0; i < obsnum; i++){
-        if (collision(frog, obs[i]) == 1){
+        if (collision(frog, obs[i]) == 1 && !frog->isInCar){
             clearObj(frog);
             drawObj(obs[i]);
             gameOver(frog->win, sWin, pWin);
@@ -326,6 +369,7 @@ void obstacleCollision(OBJ* frog, OBJ** obs, int obsnum, OBJ** cars, int carnum,
         }
     }	
 }
+
 
 
 // ---------------- MAIN LOOP/TIMELINE ------------------
@@ -348,8 +392,7 @@ void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* ga
         moveCar(cars[i], fC);
         if (rand()%2 == 1){cars[i]->speed = 1 + rand() % 3;}
         if (cars[i]->x > gWin->width || cars[i]->x < 0){ cars[i] = carRand(cars[i], gamesettings);}
-        if (collision(frog, cars[i]) == 1) {gameOver(gWin, sWin, pWin);} // 1 = frog and car collided
-        for (int j = 0; j < carnum; j++){if (j!=i && (collision(cars[j], cars[i]) == 1)){changeLane(cars[i]);}}
+        carCollision(frog, cars, carnum, pWin, sWin, gamesettings[6]);
         box(gWin->window, 0, 0);
     }
 
@@ -357,7 +400,8 @@ void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* ga
             pts++;
             moveFrog(frog, 0, gWin->height-3, fC);
             for (int i = 0; i < carnum; i++){clearObj(cars[i]);}
-            initCars(cars, carnum, gWin, sC, gamesettings[3], gamesettings[4]);
+            for (int i = 0; i < obsnum; i++){clearObj(obs[i]);}
+            initCars(cars, carnum, gWin, sC, gamesettings[3], gamesettings[4], gamesettings[6]);
             initObs(obs, obsnum, gWin, sO);
     }
     
@@ -379,7 +423,7 @@ int main(){
     starterScreen(stdWin);
 
     // Create arrays from files with settings and symbols
-    int gameSettings[SETTINGS_NUM];         // 0 - width; 1 - height; 2 - timer; 3&4 - min/max car width,
+    int gameSettings[SETTINGS_NUM];         // 0 - width; 1 - height; 2 - timer; 3&4 - min/max car width, 5 - car num, 6 - 1/x friendly cars
     char gameSymbols[SYMBOL_NUM];           // X - frog; # - car segment; O - obstacle
     arrayFromFiles(gameSettings, gameSymbols);
     
@@ -394,7 +438,7 @@ int main(){
     int carNum = gameSettings[5];
     carNum += 5;
     OBJ* cars[carNum];
-    initCars(cars, carNum, gameWin,  gameSymbols[1], gameSettings[3], gameSettings[4]);
+    initCars(cars, carNum, gameWin,  gameSymbols[1], gameSettings[3], gameSettings[4], gameSettings[6]);
 
     int obsNum = gameSettings[1]/2;
     OBJ* obstacles[obsNum];
