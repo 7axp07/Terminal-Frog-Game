@@ -45,6 +45,7 @@ typedef struct {
     int mv;
     bool isFriendly;
     bool isInCar;
+    bool demandsCar;
 } OBJ;
 
  typedef struct {
@@ -209,6 +210,7 @@ OBJ* initFrog(WIN* win, int color, char symbol){
     frog->mv = MVF;
     frog->width = 1;
     frog->isInCar = false;
+    frog->demandsCar = false;
     return frog;
 }
 
@@ -360,22 +362,21 @@ void carCollision(OBJ* frog, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin, in
         if (shouldStop && stopCollision(frog, cars[i]) == 1 && !cars[i]->isFriendly){
             cars[i]->speed = 0;
         }
+        else if (!frog->demandsCar && stopCollision(frog, cars[i]) == 1 && cars[i]->isFriendly){
+            changeLane(cars[i]);
+        }
+        else if (frog->demandsCar && stopCollision(frog, cars[i]) == 1 && cars[i]->isFriendly){
+            if(frog->y == cars[i]->y && frog->x < frog->xmax-1 && frog->x > frog->xmin+1){
+                clearObj(frog);
+                frog->x += cars[i]->dir;
+                frog->isInCar = true;
+                drawObj(frog);
+                
+            }
+            else {frog->isInCar = false;}
+        }
         else if (!shouldStop && collision(frog, cars[i]) == 1 && !cars[i]->isFriendly && !frog->isInCar){ // 1 = frog and car collided
             gameOver(frog->win, sWin, pWin);
-        }
-        else if (collision(frog, cars[i]) == 1 && cars[i]->isFriendly && !frog->isInCar){
-            if (ch =='w' || frog->isInCar == true){
-            frog->isInCar = true;
-            cars[i]->isInCar = true;
-            if(frog->y == cars[i]->y && frog->x < frog->xmax-1 && frog->x > frog->xmin+1){
-                frog->x += cars[i]->dir;
-                drawObj(frog);
-            }
-            else {
-                frog->isInCar = false;
-                cars[i]->isInCar = false;
-            }
-            }
         }
         else if (collision(frog, cars[i]) == 0) {frog->isInCar = false; cars[i]->isInCar = false; drawObj(frog);} 
         for (int j = 0; j < carnum; j++){
@@ -391,7 +392,7 @@ void carCollision(OBJ* frog, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin, in
 
 void obstacleCollision(OBJ* frog, OBJ** obs, int obsnum, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin){
      for (int i = 0; i < obsnum; i++){
-        if (collision(frog, obs[i]) == 1 && !frog->isInCar){
+        if (!frog->isInCar && collision(frog, obs[i]) == 1){
             clearObj(frog);
             drawObj(obs[i]);
             gameOver(frog->win, sWin, pWin);
@@ -407,27 +408,29 @@ void obstacleCollision(OBJ* frog, OBJ** obs, int obsnum, OBJ** cars, int carnum,
     }	
 }
 
+void checkInput(int ch, OBJ* frog, WIN* sWin, WINDOW* pWin){
+    if (ch == ERR) ch = NOKEY;
+    else if (ch == 'e' && !frog->demandsCar){frog->demandsCar = true;}
+    else if (ch == 'e' && frog->demandsCar){frog->demandsCar = false;}
+    else if (ch == 'k') {gameOver(frog->win, sWin, pWin);}
+}
 
 
 // ---------------- MAIN LOOP/TIMELINE ------------------
 
 void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* gamesettings, int carnum, OBJ** obs, int obsnum, TIMER* timer){
-    int ch, pts = 0; //fC = 0;
-    //float timer = gamesettings[2];
+    int ch, pts = 0;
     char sC = cars[0]->symbol;
     char sO = obs[0]->symbol;
     clock_t start, end;
 
     nodelay(gWin->window, TRUE);
     keypad(gWin->window, TRUE);
-
     while (timer->timeLeft > 0){
     start = clock();
-    if ((ch = wgetch(gWin->window)) == ERR) ch = NOKEY;
-    else if (ch == 'k') {gameOver(gWin, sWin, pWin);}
-    else {
-       frogMover(ch, frog,timer->frameNum);
-    }
+    ch = wgetch(gWin->window);
+    checkInput(ch, frog, sWin, pWin); 
+    frogMover(ch, frog,timer->frameNum);
     for (int i = 0; i < carnum; i++){
         moveCar(cars[i], timer->frameNum);
         if (rand()%2 == 1){cars[i]->speed = 1 + rand() % 3;}
@@ -450,10 +453,6 @@ void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* ga
     if (!updateTimer(timer, start, end, pts)){
         gameOver(gWin, sWin, pWin);
     }
-    //updateStatus(sWin, pts, timer);
-   // usleep(FRAME_TIME * 1000);
-   // timer -= FRAME_TIME / 1000.0; 
-   // fC++;
     }
     gameOver(gWin, sWin, pWin);
 }
