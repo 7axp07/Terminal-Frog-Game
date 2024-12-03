@@ -13,6 +13,7 @@
 #define DELAY_ON 1
 
 #define NOKEY ' '
+#define QUIT_KEY 'k'
 
 // Colours
 #define BG_COLOR 1 //black
@@ -21,10 +22,9 @@
 #define CAR_COLOR_FRIEND 4 //blue
 
 //Timer
-#define BET_TIME	2
-#define FRAME_TIME	100	
-#define MVF	1
-#define MVC 2
+#define FRAME_TIME	10
+#define MVF	5
+#define MVC 10
 
 // ----------- Structures ------------
 typedef struct {
@@ -46,6 +46,14 @@ typedef struct {
     bool isFriendly;
     bool isInCar;
 } OBJ;
+
+ typedef struct {
+    int frameNum;
+    int gameTime;
+    float timeLeft;
+    WIN* win;
+} TIMER;
+
 
 // ----------- Window etc functions --------------
 
@@ -103,12 +111,33 @@ void cleanup(WIN* gWin, WIN* sWin, WINDOW* parentW){
 
 // ------------- Status functions -----------------
 
+TIMER* initTimer(WIN* win, int gameTime){
+    TIMER* timer = (TIMER*)malloc(sizeof(TIMER));
+    timer->frameNum = 0;
+    timer->gameTime = gameTime;
+    timer->timeLeft = gameTime;
+    timer->win = win;
+    return timer;
+}
 
-void updateStatus(WIN* sWin, int pts, float timer) {
+void updateStatus(WIN* sWin, int pts, TIMER* timer) {
     mvwprintw(sWin->window, 0, 1, "Points: %d", pts);
-    mvwprintw(sWin->window, 0, 12, "Time Left: %.1fs", timer);
+    mvwprintw(sWin->window, 0, 12, "Time Left: %.1fs", timer->timeLeft);
+    mvwaddstr(sWin->window, 1, 0, "Name Surname ID");
     wrefresh(sWin->window);
 }
+
+bool updateTimer(TIMER* timer, clock_t start, clock_t end, int pts){
+    usleep((FRAME_TIME-(end-start)/CLOCKS_PER_SEC/1000.0)*1000.0);
+    timer->frameNum++;
+    timer->timeLeft = timer->gameTime - timer->frameNum*FRAME_TIME /1000.0;
+    if (timer->timeLeft <= 0){
+        return FALSE;
+    }
+    updateStatus(timer->win, pts, timer);
+    return TRUE;
+}
+
 void gameOver(WIN* gWin, WIN* sWin, WINDOW* pWin){
     mvwaddstr(gWin->window, gWin->height / 2, gWin->width / 2 - 5, "GAME OVER");
     wrefresh(gWin->window);
@@ -257,13 +286,13 @@ void initObs(OBJ** obs, int obsNum, WIN* gWin, char s){
 // Moving OBJs
 
 void moveFrog(OBJ* frog, int dx, int dy, unsigned int frame) {
-     if (frame % frog->mv == 0) {
+     if (frame - frog->mv >= MVF) {
         clearObj(frog);
         frog->x = frog->x + dx < frog->xmin ? frog->xmin : frog->x + dx > frog->xmax ? frog->xmax : frog->x + dx;
         frog->y = frog->y + dy < 1 ? 1 : frog->y + dy;
         drawObj(frog);
     }
-    //frog->mv = frame;
+    frog->mv = frame;
 }
 
 void frogMover(int ch, OBJ* frog, int fC){
@@ -289,6 +318,13 @@ void moveCar(OBJ* car, unsigned int frame) {
         car->x += car->dir * car->speed;
         drawObj(car);
     } 
+}
+
+void toStart(OBJ* frog){
+    clearObj(frog);
+    frog->x = frog->win->width/2;
+    frog->y = frog->win->height-2;
+    drawObj(frog);
 }
 
 void changeLane(OBJ* obj){
@@ -318,7 +354,7 @@ int stopCollision(OBJ* obj1, OBJ* obj2){
     
 }
 
-void carCollision(OBJ* frog, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin, int f){
+void carCollision(OBJ* frog, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin, int f, int ch){
     for (int i = 0; i < carnum; i++){
         bool shouldStop = rand()%2;
         if (shouldStop && stopCollision(frog, cars[i]) == 1 && !cars[i]->isFriendly){
@@ -328,6 +364,7 @@ void carCollision(OBJ* frog, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin, in
             gameOver(frog->win, sWin, pWin);
         }
         else if (collision(frog, cars[i]) == 1 && cars[i]->isFriendly && !frog->isInCar){
+            if (ch =='w' || frog->isInCar == true){
             frog->isInCar = true;
             cars[i]->isInCar = true;
             if(frog->y == cars[i]->y && frog->x < frog->xmax-1 && frog->x > frog->xmin+1){
@@ -337,7 +374,7 @@ void carCollision(OBJ* frog, OBJ** cars, int carnum, WINDOW* pWin, WIN* sWin, in
             else {
                 frog->isInCar = false;
                 cars[i]->isInCar = false;
-                //drawObj(frog);
+            }
             }
         }
         else if (collision(frog, cars[i]) == 0) {frog->isInCar = false; cars[i]->isInCar = false; drawObj(frog);} 
@@ -374,43 +411,49 @@ void obstacleCollision(OBJ* frog, OBJ** obs, int obsnum, OBJ** cars, int carnum,
 
 // ---------------- MAIN LOOP/TIMELINE ------------------
 
-void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* gamesettings, int carnum, OBJ** obs, int obsnum){
-    int ch, pts = 0, fC = 0;
-    float timer = gamesettings[2];
+void mainLoop(WIN* gWin, WIN* sWin, WINDOW* pWin, OBJ* frog, OBJ** cars, int* gamesettings, int carnum, OBJ** obs, int obsnum, TIMER* timer){
+    int ch, pts = 0; //fC = 0;
+    //float timer = gamesettings[2];
     char sC = cars[0]->symbol;
     char sO = obs[0]->symbol;
+    clock_t start, end;
 
     nodelay(gWin->window, TRUE);
     keypad(gWin->window, TRUE);
 
-    while (timer > 0){
+    while (timer->timeLeft > 0){
+    start = clock();
     if ((ch = wgetch(gWin->window)) == ERR) ch = NOKEY;
+    else if (ch == 'k') {gameOver(gWin, sWin, pWin);}
     else {
-       frogMover(ch, frog,fC);
+       frogMover(ch, frog,timer->frameNum);
     }
     for (int i = 0; i < carnum; i++){
-        moveCar(cars[i], fC);
+        moveCar(cars[i], timer->frameNum);
         if (rand()%2 == 1){cars[i]->speed = 1 + rand() % 3;}
         if (cars[i]->x > gWin->width || cars[i]->x < 0){ cars[i] = carRand(cars[i], gamesettings);}
-        carCollision(frog, cars, carnum, pWin, sWin, gamesettings[6]);
+        carCollision(frog, cars, carnum, pWin, sWin, gamesettings[6], ch);
         box(gWin->window, 0, 0);
     }
 
     if (frog->y == 1) { // Frog reaches the "top"
             pts++;
-            moveFrog(frog, 0, gWin->height-3, fC);
+            toStart(frog);
             for (int i = 0; i < carnum; i++){clearObj(cars[i]);}
             for (int i = 0; i < obsnum; i++){clearObj(obs[i]);}
             initCars(cars, carnum, gWin, sC, gamesettings[3], gamesettings[4], gamesettings[6]);
             initObs(obs, obsnum, gWin, sO);
     }
-    
-    obstacleCollision(frog, obs,obsnum, cars, carnum, pWin, sWin);
 
-    updateStatus(sWin, pts, timer);
-    usleep(FRAME_TIME * 1000);
-    timer -= FRAME_TIME / 1000.0; 
-    fC++;
+    obstacleCollision(frog, obs,obsnum, cars, carnum, pWin, sWin);
+    end = clock();
+    if (!updateTimer(timer, start, end, pts)){
+        gameOver(gWin, sWin, pWin);
+    }
+    //updateStatus(sWin, pts, timer);
+   // usleep(FRAME_TIME * 1000);
+   // timer -= FRAME_TIME / 1000.0; 
+   // fC++;
     }
     gameOver(gWin, sWin, pWin);
 }
@@ -429,7 +472,8 @@ int main(){
     
     // Create windows and objects
     WIN* gameWin = initWindow(stdWin, gameSettings[0], gameSettings[1], 0, 0, DELAY_ON);
-    WIN* statusWin = initWindow(stdWin, STATUS_WIDTH, 1, 0, gameSettings[1]+1, DELAY_ON);
+    WIN* statusWin = initWindow(stdWin, STATUS_WIDTH, 2, 0, gameSettings[1]+1, DELAY_ON);
+    TIMER* timer = initTimer(statusWin, gameSettings[2]);
 
 
     OBJ* frog = initFrog(gameWin, FROG_COLOR, gameSymbols[0]);
@@ -443,10 +487,8 @@ int main(){
     int obsNum = gameSettings[1]/2;
     OBJ* obstacles[obsNum];
     initObs(obstacles, obsNum, gameWin, gameSymbols[2]);
-
-    //OBJ* obstacle = initObstacle();
    
-    mainLoop(gameWin, statusWin, stdWin, frog, cars, gameSettings, carNum, obstacles, obsNum);
+    mainLoop(gameWin, statusWin, stdWin, frog, cars, gameSettings, carNum, obstacles, obsNum, timer);
     
     // --------- Cleanup ----------
     cleanup(gameWin, statusWin, stdWin);
