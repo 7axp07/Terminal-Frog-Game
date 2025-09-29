@@ -6,6 +6,7 @@
 
 ### Compile and run:
 `gcc FrogGame.c -o frogger -lncurses`
+
 `./frogger`
 
 ------------------------------------
